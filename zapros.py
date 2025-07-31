@@ -26,6 +26,7 @@ STATES = {
     "NAME_ON_DETAILS": "name_details",
     "SHIFT_MANAGER": "shift_manager",
     "STAGE": "stage",
+    "COMMENT": "comment",
 }
 MANAGER_CHAT_IDS = {
     "Dima": 7367191192 ,
@@ -64,17 +65,23 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[STATES["STAGE"]] = "select_worker"
 
     keyboard = [[InlineKeyboardButton(name, callback_data=f"worker_{name}")] for name in WORKERS]
+    keyboard.append([InlineKeyboardButton("Без имени", callback_data="worker_none")])  # ← добавлена кнопка
     await query.edit_message_text("Выберите имя менеджера:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 async def select_worker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     worker = query.data.replace("worker_", "")
-    context.user_data[STATES["MANAGER"]] = worker
-    category = context.user_data[STATES["CATEGORY"]]
+    if worker == "none":
+        context.user_data[STATES["MANAGER"]] = None
+    else:
+        context.user_data[STATES["MANAGER"]] = worker
 
+    category = context.user_data[STATES["CATEGORY"]]
     context.user_data[STATES["STAGE"]] = "request_id"
     await query.edit_message_text("Введите ID заявки:")
+
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -94,20 +101,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [
                 [InlineKeyboardButton("Нет банка на реквизитах", callback_data="no_bank")],
                 [InlineKeyboardButton("Разные имена", callback_data="diff_names")],
+                [InlineKeyboardButton("Проблемный номер", callback_data="bad_number")],
             ]
             await update.message.reply_text("Что случилось?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif stage == "amount":
         context.user_data[STATES["AMOUNT"]] = text
         if category == "funds_received":
-            # Пропускаем прикрепление скриншотов
             context.user_data[STATES["STAGE"]] = "choose_manager"
             keyboard = [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in MANAGERS]
             await update.message.reply_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             context.user_data[STATES["STAGE"]] = "screenshot"
             await update.message.reply_text("Прикрепите скриншоты (можно несколько), затем нажмите Готово")
-
 
     elif stage == "bank_to":
         context.user_data[STATES["BANK_TO"]] = text
@@ -129,6 +135,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[STATES["STAGE"]] = "screenshot"
         await update.message.reply_text("Прикрепите скриншоты (можно несколько), затем нажмите Готово")
 
+    elif stage == "bad_number_comment":
+        context.user_data[STATES["COMMENT"]] = text
+        context.user_data[STATES["STAGE"]] = "choose_manager"
+        keyboard = [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in MANAGERS]
+        await update.message.reply_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 async def wrong_details_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -138,10 +151,16 @@ async def wrong_details_reason(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data[STATES["REASON"]] = "Нет банка на реквизитах"
         context.user_data[STATES["STAGE"]] = "screenshot"
         await query.edit_message_text("Прикрепите скриншоты (можно несколько), затем нажмите Готово")
-    else:
+    
+    elif reason == "diff_names":
         context.user_data[STATES["REASON"]] = "Разные имена"
         context.user_data[STATES["STAGE"]] = "name_platform"
         await query.edit_message_text("Какое имя указано в платформе?")
+    
+    elif reason == "bad_number":
+        context.user_data[STATES["REASON"]] = "Проблемный номер"
+        context.user_data[STATES["STAGE"]] = "bad_number_comment"
+        await query.edit_message_text("Опишите в чём проблема:")
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stage = context.user_data.get(STATES["STAGE"])
@@ -176,43 +195,60 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
     category = user_data[STATES["CATEGORY"]]
     screenshots = user_data.get(STATES["SCREENSHOTS"], [])
-    sender = user_data[STATES["MANAGER"]]  
+    sender = user_data.get(STATES["MANAGER"])
+
+    # Строка с отправителем, если указан
+    if sender:
+        sender_line = f"👤 Запрос от: {sender}\n\n"
+    else:
+        sender_line = ""
 
     # Формируем текст
     if category == "overpayment":
         message_text = (
-            f"👤 Запрос от: {sender}\n\n"
+            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Переплата в размере {user_data[STATES['AMOUNT']]}\n"
             f"Просьба связаться с клиентом для возврата средств\n"
             f"Реквизиты для возврата:"
         )
+
     elif category == "wrong_bank":
         message_text = (
-            f"👤 Запрос от: {sender}\n\n"
+            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Отправили не на тот банк\n"
             f"Нужно было: {user_data[STATES['BANK_TO']]}\n"
             f"Перевели на: {user_data[STATES['BANK_FROM']]}"
         )
+
     elif category == "wrong_details":
-        if user_data[STATES["REASON"]] == "Нет банка на реквизитах":
+        reason = user_data[STATES["REASON"]]
+        if reason == "Нет банка на реквизитах":
             message_text = (
-                f"👤 Запрос от: {sender}\n\n"
+                f"{sender_line}"
                 f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
                 f"На реквизитах отсутствует банк"
             )
-        else:
+        elif reason == "Разные имена":
             message_text = (
-                f"👤 Запрос от: {sender}\n\n"
+                f"{sender_line}"
                 f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
                 f"Разные имена\n"
                 f"В платформе: {user_data[STATES['NAME_ON_PLATFORM']]}\n"
                 f"На реквизитах: {user_data[STATES['NAME_ON_DETAILS']]}"
             )
+        elif reason == "Проблемный номер":
+            message_text = (
+                f"{sender_line}"
+                f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
+                f"Проблемный номер\n"
+                f"Комментарий: {user_data[STATES['COMMENT']]}"
+            )
+
     elif category == "funds_received":
         message_text = (
-            f"👤 Запрос от: {sender}\n\n"
+            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Просьба уточнить поступление {user_data[STATES['AMOUNT']]}"
         )
@@ -231,6 +267,8 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text("✅ Запрос отправлен.", reply_markup=InlineKeyboardMarkup(keyboard))
     context.user_data.clear()
 
+
+
 async def setup_menu(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Создать запрос")
@@ -244,7 +282,7 @@ def main():
     app.add_handler(CallbackQueryHandler(start, pattern="^start$"))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(overpayment|wrong_bank|wrong_details|funds_received)$"))
     app.add_handler(CallbackQueryHandler(select_worker, pattern="^worker_"))
-    app.add_handler(CallbackQueryHandler(wrong_details_reason, pattern="^(no_bank|diff_names)$"))
+    app.add_handler(CallbackQueryHandler(wrong_details_reason, pattern="^(no_bank|diff_names|bad_number)$"))
     app.add_handler(CallbackQueryHandler(screenshots_done, pattern="^screenshots_done$"))
     app.add_handler(CallbackQueryHandler(send_to_manager, pattern="^sendto_"))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
