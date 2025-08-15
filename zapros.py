@@ -29,7 +29,7 @@ STATES = {
     "COMMENT": "comment",
 }
 MANAGER_CHAT_IDS = {
-    "Dima": 7367191192 ,
+    "Dima": 7367191192 , #1040008041
     "Masha": 874826440 ,
     "Olka": 950905671
     
@@ -220,7 +220,7 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Отправили не на тот банк\n"
             f"Нужно было: {user_data[STATES['BANK_TO']]}\n"
             f"Перевели на: {user_data[STATES['BANK_FROM']]}\n"
-            f"Отправили не на тот банк"
+            f"Уточните пожалуйста есть ли доступ к средствам"
         )
 
     elif category == "wrong_details":
