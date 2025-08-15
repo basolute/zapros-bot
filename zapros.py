@@ -219,7 +219,8 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Отправили не на тот банк\n"
             f"Нужно было: {user_data[STATES['BANK_TO']]}\n"
-            f"Перевели на: {user_data[STATES['BANK_FROM']]}"
+            f"Перевели на: {user_data[STATES['BANK_FROM']]}\n"
+            f"Отправили не на тот банк"
         )
 
     elif category == "wrong_details":
