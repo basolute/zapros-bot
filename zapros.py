@@ -277,7 +277,7 @@ async def setup_menu(app):
     await app.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
 def main():
-    app = Application.builder().token("7551888806:AAF753-UcVdFJGJlsV__6l3WTb9H_tCQNxY").build()
+    app = Application.builder().token("7551888806:AAHEqSnn4NZtKCLSAL6r5vOuwvgTnTjrC-o").build()
     asyncio.get_event_loop().run_until_complete(setup_menu(app))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(start, pattern="^start$"))
