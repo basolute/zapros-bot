@@ -9,7 +9,6 @@ from telegram.ext import (
 )
 
 # Имена работников и старших менеджеров
-WORKERS = ['Bashmak', 'ilia', 'Viktor', 'AndreyGeo', 'Denis', 'Igor', 'Atrem', 'Grigoriy', 'Dyusha']
 MANAGERS = ['Dima', 'Masha', 'Olka']
 
 # Состояния
@@ -63,10 +62,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     category = query.data
     context.user_data[STATES["CATEGORY"]] = category
     context.user_data[STATES["STAGE"]] = "select_worker"
+    context.user_data[STATES["STAGE"]] = "request_id"
+    await query.edit_message_text("Введите ID заявки:")
 
-    keyboard = [[InlineKeyboardButton(name, callback_data=f"worker_{name}")] for name in WORKERS]
-    keyboard.append([InlineKeyboardButton("Без имени", callback_data="worker_none")])  # ← добавлена кнопка
-    await query.edit_message_text("Выберите имя менеджера:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def select_worker(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -195,18 +193,10 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
     category = user_data[STATES["CATEGORY"]]
     screenshots = user_data.get(STATES["SCREENSHOTS"], [])
-    sender = user_data.get(STATES["MANAGER"])
-
-    # Строка с отправителем, если указан
-    if sender:
-        sender_line = f"👤 Запрос от: {sender}\n\n"
-    else:
-        sender_line = ""
 
     # Формируем текст
     if category == "overpayment":
         message_text = (
-            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Переплата в размере {user_data[STATES['AMOUNT']]}\n"
             f"Просьба связаться с клиентом для возврата средств\n"
@@ -215,7 +205,6 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif category == "wrong_bank":
         message_text = (
-            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Отправили не на тот банк\n"
             f"Нужно было: {user_data[STATES['BANK_TO']]}\n"
@@ -227,13 +216,11 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reason = user_data[STATES["REASON"]]
         if reason == "Нет банка на реквизитах":
             message_text = (
-                f"{sender_line}"
                 f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
                 f"На реквизитах отсутствует банк"
             )
         elif reason == "Разные имена":
             message_text = (
-                f"{sender_line}"
                 f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
                 f"Разные имена\n"
                 f"В платформе: {user_data[STATES['NAME_ON_PLATFORM']]}\n"
@@ -241,7 +228,6 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         elif reason == "Проблемный номер":
             message_text = (
-                f"{sender_line}"
                 f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
                 f"Проблемный номер\n"
                 f"Комментарий: {user_data[STATES['COMMENT']]}"
@@ -249,7 +235,6 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif category == "funds_received":
         message_text = (
-            f"{sender_line}"
             f"Заявка ID: {user_data[STATES['REQUEST_ID']]}\n"
             f"Просьба уточнить поступление {user_data[STATES['AMOUNT']]}"
         )
@@ -282,7 +267,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(start, pattern="^start$"))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(overpayment|wrong_bank|wrong_details|funds_received)$"))
-    app.add_handler(CallbackQueryHandler(select_worker, pattern="^worker_"))
     app.add_handler(CallbackQueryHandler(wrong_details_reason, pattern="^(no_bank|diff_names|bad_number)$"))
     app.add_handler(CallbackQueryHandler(screenshots_done, pattern="^screenshots_done$"))
     app.add_handler(CallbackQueryHandler(send_to_manager, pattern="^sendto_"))
