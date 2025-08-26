@@ -29,8 +29,28 @@ def get_bot_token() -> str:
     return token
 
 
-# Имена работников и старших менеджеров
+# ===== Настройки доступа =====
+# Твой Telegram user_id. Узнать можно через @userinfobot.
+MY_USER_ID = 1040008041  # <-- ЗАМЕНИ на свой user_id!
+
+# Имена работников и старших менеджеров (базовый список, без TEST)
 MANAGERS = ['Dima', 'Masha', 'Olka']
+
+# Чаты менеджеров (PII — при желании можно вынести в ENV/БД)
+MANAGER_CHAT_IDS = {
+    "Dima": 7367191192,   # 1040008041
+    "Masha": 874826440,
+    "Olka": 950905671,
+    "TEST": 1040008041      # <-- ЗАМЕНИ на свой chat_id (обычно равен user_id)
+}
+
+def build_manager_keyboard(user_id: int):
+    """Показываем TEST только владельцу (MY_USER_ID)."""
+    managers = MANAGERS.copy()
+    if user_id == MY_USER_ID:
+        managers.append("TEST")
+    return [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in managers]
+
 
 # Состояния
 STATES = {
@@ -47,13 +67,6 @@ STATES = {
     "SHIFT_MANAGER": "shift_manager",
     "STAGE": "stage",
     "COMMENT": "comment",
-}
-
-# Чаты менеджеров (PII — оставляем здесь, при желании можно вынести в ENV/БД)
-MANAGER_CHAT_IDS = {
-    "Dima": 7367191192,   # 1040008041
-    "Masha": 874826440,
-    "Olka": 950905671
 }
 
 
@@ -83,7 +96,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     category = query.data
     context.user_data[STATES["CATEGORY"]] = category
-    # Убираем лишний этап select_worker — сразу переходим к запросу ID
+    # Сразу переходим к запросу ID
     context.user_data[STATES["STAGE"]] = "request_id"
     await query.edit_message_text("Введите ID заявки:")
 
@@ -92,6 +105,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip() if update.message and update.message.text else ""
     stage = context.user_data.get(STATES["STAGE"])
     category = context.user_data.get(STATES["CATEGORY"])
+    user_id = update.effective_user.id
 
     if stage == "request_id":
         if not text:
@@ -117,7 +131,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Базовая валидация числа
         normalized = text.replace(",", ".")
         try:
-            amt = float(normalized)
+            float(normalized)
         except ValueError:
             await update.message.reply_text("Пожалуйста, введите сумму числом. Пример: 1234.56")
             return
@@ -125,7 +139,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if category == "funds_received":
             context.user_data[STATES["STAGE"]] = "choose_manager"
-            keyboard = [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in MANAGERS]
+            keyboard = build_manager_keyboard(user_id)
             await update.message.reply_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             context.user_data[STATES["STAGE"]] = "screenshot"
@@ -154,7 +168,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif stage == "bad_number_comment":
         context.user_data[STATES["COMMENT"]] = text
         context.user_data[STATES["STAGE"]] = "choose_manager"
-        keyboard = [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in MANAGERS]
+        keyboard = build_manager_keyboard(user_id)
         await update.message.reply_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     else:
@@ -208,7 +222,7 @@ async def screenshots_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data[STATES["STAGE"]] = "choose_manager"
-    keyboard = [[InlineKeyboardButton(name, callback_data=f"sendto_{name}")] for name in MANAGERS]
+    keyboard = build_manager_keyboard(update.effective_user.id)
     await query.edit_message_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -221,6 +235,11 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     shift_manager = query.data.replace("sendto_", "")
     context.user_data[STATES["SHIFT_MANAGER"]] = shift_manager
+
+    # Защита: TEST может выбрать и отправлять только владелец
+    if shift_manager == "TEST" and update.effective_user.id != MY_USER_ID:
+        await query.message.reply_text("⚠️ Недостаточно прав для отправки запросов этому менеджеру.")
+        return
 
     user_data = context.user_data
     category = user_data.get(STATES["CATEGORY"])
