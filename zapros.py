@@ -44,6 +44,15 @@ MANAGER_CHAT_IDS = {
     "TEST": 1040008041      # <-- ЗАМЕНИ на свой chat_id (обычно равен user_id)
 }
 
+def is_senior_manager_user(user_id: int) -> bool:
+    """Проверяем, относится ли user_id к числу старших (Dima, Masha, Olka). TEST не считается старшим."""
+    seniors = {
+        MANAGER_CHAT_IDS.get("Dima"),
+        MANAGER_CHAT_IDS.get("Masha"),
+        MANAGER_CHAT_IDS.get("Olka"),
+    }
+    return user_id in seniors
+
 def build_manager_keyboard(user_id: int):
     """Показываем TEST только владельцу (MY_USER_ID)."""
     managers = MANAGERS.copy()
@@ -68,6 +77,17 @@ STATES = {
     "STAGE": "stage",
     "COMMENT": "comment",
 }
+
+# ---------- UI helpers ----------
+def screenshot_prompt_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для этапа скриншотов.
+    Кнопка «Пропустить» показывается только старшим менеджерам (Dima, Masha, Olka).
+    """
+    rows = [[InlineKeyboardButton("Готово", callback_data="screenshots_done")]]
+    if is_senior_manager_user(user_id):
+        rows.append([InlineKeyboardButton("Пропустить", callback_data="skip_screenshots")])
+    return InlineKeyboardMarkup(rows)
 
 
 # ===========================
@@ -143,7 +163,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             context.user_data[STATES["STAGE"]] = "screenshot"
-            await update.message.reply_text("Прикрепите скриншоты (можно несколько), затем нажмите «Готово»")
+            await update.message.reply_text(
+                "Прикрепите скриншоты (можно несколько), затем нажмите «Готово».",
+                reply_markup=screenshot_prompt_keyboard(user_id)
+            )
 
     elif stage == "bank_to":
         context.user_data[STATES["BANK_TO"]] = text
@@ -153,7 +176,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif stage == "bank_from":
         context.user_data[STATES["BANK_FROM"]] = text
         context.user_data[STATES["STAGE"]] = "screenshot"
-        await update.message.reply_text("Прикрепите скриншоты (можно несколько), затем нажмите «Готово»")
+        await update.message.reply_text(
+            "Прикрепите скриншоты (можно несколько), затем нажмите «Готово».",
+            reply_markup=screenshot_prompt_keyboard(user_id)
+        )
 
     elif stage == "name_platform":
         context.user_data[STATES["NAME_ON_PLATFORM"]] = text
@@ -163,7 +189,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif stage == "name_details":
         context.user_data[STATES["NAME_ON_DETAILS"]] = text
         context.user_data[STATES["STAGE"]] = "screenshot"
-        await update.message.reply_text("Прикрепите скриншоты (можно несколько), затем нажмите «Готово»")
+        await update.message.reply_text(
+            "Прикрепите скриншоты (можно несколько), затем нажмите «Готово».",
+            reply_markup=screenshot_prompt_keyboard(user_id)
+        )
 
     elif stage == "bad_number_comment":
         context.user_data[STATES["COMMENT"]] = text
@@ -181,10 +210,15 @@ async def wrong_details_reason(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     reason = query.data
 
+    uid = update.effective_user.id
+
     if reason == "no_bank":
         context.user_data[STATES["REASON"]] = "Нет банка на реквизитах"
         context.user_data[STATES["STAGE"]] = "screenshot"
-        await query.edit_message_text("Прикрепите скриншоты (можно несколько), затем нажмите «Готово»")
+        await query.edit_message_text(
+            "Прикрепите скриншоты (можно несколько), затем нажмите «Готово».",
+            reply_markup=screenshot_prompt_keyboard(uid)
+        )
 
     elif reason == "diff_names":
         context.user_data[STATES["REASON"]] = "Разные имена"
@@ -199,6 +233,7 @@ async def wrong_details_reason(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stage = context.user_data.get(STATES["STAGE"])
+    user_id = update.effective_user.id
     if stage == "screenshot":
         if STATES["SCREENSHOTS"] not in context.user_data:
             context.user_data[STATES["SCREENSHOTS"]] = []
@@ -206,12 +241,11 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_id = update.message.photo[-1].file_id
         context.user_data[STATES["SCREENSHOTS"]].append(photo_id)
 
-        # Кнопка "Готово" показываем один раз
+        # Кнопки показываем один раз
         if not context.user_data.get("photos_acknowledged"):
-            keyboard = [[InlineKeyboardButton("Готово", callback_data="screenshots_done")]]
             await update.message.reply_text(
                 "Фото сохранено. Прикрепите ещё или нажмите «Готово».",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=screenshot_prompt_keyboard(user_id)
             )
             context.user_data["photos_acknowledged"] = True
     else:
@@ -221,6 +255,17 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def screenshots_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    context.user_data[STATES["STAGE"]] = "choose_manager"
+    keyboard = build_manager_keyboard(update.effective_user.id)
+    await query.edit_message_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def skip_screenshots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик кнопки «Пропустить» — минуем этап загрузки скриншотов (видна только старшим)."""
+    query = update.callback_query
+    await query.answer()
+    # убедимся, что ключ существует (пусть пустой список)
+    context.user_data.setdefault(STATES["SCREENSHOTS"], [])
     context.user_data[STATES["STAGE"]] = "choose_manager"
     keyboard = build_manager_keyboard(update.effective_user.id)
     await query.edit_message_text("Кто старший менеджер на смене?", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -291,11 +336,17 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message_text = f"Заявка ID: {user_data.get(STATES['REQUEST_ID'])}"
 
-    # Отправляем старшему менеджеру
+    # Кому отправляем
     chat_id = MANAGER_CHAT_IDS.get(shift_manager)
     if not chat_id:
         await query.message.reply_text("⚠️ Ошибка: chat_id старшего менеджера не найден.")
         return
+
+    # ID инициатора (чтобы уведомить его по кнопке «Запрос сделан»)
+    requester_id = update.effective_user.id
+    manager_action_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Запрос сделан", callback_data=f"mark_done_{requester_id}")]
+    ])
 
     try:
         # 1 фото → send_photo; 2–10 → send_media_group; >10 → чанками по 10
@@ -307,13 +358,40 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     media = [InputMediaPhoto(photo_id) for photo_id in chunk]
                     await context.bot.send_media_group(chat_id=chat_id, media=media)
 
-        await context.bot.send_message(chat_id=chat_id, text=message_text)
+        # Текст запроса + кнопка для менеджера
+        await context.bot.send_message(chat_id=chat_id, text=message_text, reply_markup=manager_action_kb)
 
         keyboard = [[InlineKeyboardButton("Создать ещё один запрос", callback_data="start")]]
         await query.message.reply_text("✅ Запрос отправлен.", reply_markup=InlineKeyboardMarkup(keyboard))
         context.user_data.clear()
     except Exception as e:
         await query.message.reply_text(f"⚠️ Не удалось отправить сообщение менеджеру: {e}")
+
+
+async def request_mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Менеджер нажал «Запрос сделан» в своём чате.
+    Уведомляем инициатора запроса.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data  # формат: mark_done_{worker_id}
+    try:
+        worker_id = int(data.split("_", 2)[2])
+    except Exception:
+        await query.answer("Ошибка данных кнопки.", show_alert=True)
+        return
+
+    # Отправим уведомление работнику
+    try:
+        await context.bot.send_message(
+            chat_id=worker_id,
+            text="Запрос был отправлен партнеру, ждите обратной связи"
+        )
+        # Небольшое уведомление менеджеру
+        await query.answer("Уведомление отправлено сотруднику.", show_alert=False)
+    except Exception as e:
+        await query.answer(f"Не удалось уведомить сотрудника: {e}", show_alert=True)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -344,7 +422,9 @@ def main():
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^(overpayment|wrong_bank|wrong_details|funds_received)$"))
     app.add_handler(CallbackQueryHandler(wrong_details_reason, pattern="^(no_bank|diff_names|bad_number)$"))
     app.add_handler(CallbackQueryHandler(screenshots_done, pattern="^screenshots_done$"))
+    app.add_handler(CallbackQueryHandler(skip_screenshots, pattern="^skip_screenshots$"))
     app.add_handler(CallbackQueryHandler(send_to_manager, pattern="^sendto_"))
+    app.add_handler(CallbackQueryHandler(request_mark_done, pattern=r"^mark_done_\d+$"))
 
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
