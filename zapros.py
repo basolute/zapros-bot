@@ -31,30 +31,19 @@ def get_bot_token() -> str:
 
 # ===== Настройки доступа =====
 # Твой Telegram user_id. Узнать можно через @userinfobot.
-MY_USER_ID = 1040008041  # <-- ЗАМЕНИ на свой user_id!
+MY_USER_ID = 111111111  # <-- ЗАМЕНИ на свой user_id!
 
-# Имена работников и старших менеджеров (базовый список, без TEST)
-MANAGERS = ['Dima', 'Masha', 'Olka']
+# В списке менеджеров для выбора — только общий AirexSupport
+MANAGERS = ['AirexSupport']
 
-# Чаты менеджеров (PII — при желании можно вынести в ENV/БД)
+# Чаты менеджеров (подставь реальные ID)
 MANAGER_CHAT_IDS = {
-    "Dima": 7367191192,   # 1040008041 # 7367191192
-    "Masha": 874826440,
-    "Olka": 950905671,
-    "TEST": 1040008041      # <-- ЗАМЕНИ на свой chat_id (обычно равен user_id)
+    "AirexSupport": 8017918640,  # <-- chat_id аккаунта AirexSupport
+    "TEST": 123456789           # <-- твой chat_id (обычно = user_id)
 }
 
-def is_senior_manager_user(user_id: int) -> bool:
-    """Проверяем, относится ли user_id к числу старших (Dima, Masha, Olka). TEST не считается старшим."""
-    seniors = {
-        MANAGER_CHAT_IDS.get("Dima"),
-        MANAGER_CHAT_IDS.get("Masha"),
-        MANAGER_CHAT_IDS.get("Olka"),
-    }
-    return user_id in seniors
-
 def build_manager_keyboard(user_id: int):
-    """Показываем TEST только владельцу (MY_USER_ID)."""
+    """Все видят AirexSupport; TEST — только владелец (MY_USER_ID)."""
     managers = MANAGERS.copy()
     if user_id == MY_USER_ID:
         managers.append("TEST")
@@ -81,11 +70,11 @@ STATES = {
 # ---------- UI helpers ----------
 def screenshot_prompt_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
-    Клавиатура для этапа скриншотов.
-    Кнопка «Пропустить» показывается только старшим менеджерам (Dima, Masha, Olka).
+    Кнопка «Пропустить» показывается только владельцу (MY_USER_ID).
+    Для остальных — только «Готово».
     """
     rows = [[InlineKeyboardButton("Готово", callback_data="screenshots_done")]]
-    if is_senior_manager_user(user_id):
+    if user_id == MY_USER_ID:
         rows.append([InlineKeyboardButton("Пропустить", callback_data="skip_screenshots")])
     return InlineKeyboardMarkup(rows)
 
@@ -261,7 +250,7 @@ async def screenshots_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def skip_screenshots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик кнопки «Пропустить» — минуем этап загрузки скриншотов (видна только старшим)."""
+    """Обработчик кнопки «Пропустить» — минуем этап загрузки скриншотов (видна только владельцу)."""
     query = update.callback_query
     await query.answer()
     # убедимся, что ключ существует (пусть пустой список)
@@ -339,7 +328,7 @@ async def send_to_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Кому отправляем
     chat_id = MANAGER_CHAT_IDS.get(shift_manager)
     if not chat_id:
-        await query.message.reply_text("⚠️ Ошибка: chat_id старшего менеджера не найден.")
+        await query.message.reply_text("⚠️ Ошибка: chat_id менеджера не найден.")
         return
 
     # ID инициатора (чтобы уведомить его по кнопке «Запрос сделан»)
