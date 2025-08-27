@@ -31,7 +31,7 @@ def get_bot_token() -> str:
 
 # ===== Настройки доступа =====
 # Твой Telegram user_id. Узнать можно через @userinfobot.
-MY_USER_ID = 111111111  # <-- ЗАМЕНИ на свой user_id!
+MY_USER_ID = 1040008041  # <-- ЗАМЕНИ на свой user_id!
 
 # В списке менеджеров для выбора — только общий AirexSupport
 MANAGERS = ['AirexSupport']
@@ -39,7 +39,7 @@ MANAGERS = ['AirexSupport']
 # Чаты менеджеров (подставь реальные ID)
 MANAGER_CHAT_IDS = {
     "AirexSupport": 8017918640,  # <-- chat_id аккаунта AirexSupport
-    "TEST": 123456789           # <-- твой chat_id (обычно = user_id)
+    "TEST": 1040008041           # <-- твой chat_id (обычно = user_id)
 }
 
 def build_manager_keyboard(user_id: int):
